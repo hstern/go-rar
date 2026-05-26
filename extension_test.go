@@ -79,9 +79,9 @@ type paymentInitiationType struct {
 	paymentBaseline
 
 	// Type-specific members, in spec-figure declaration order.
-	InstructedAmount                  amount  `json:"instructedAmount,omitempty"`
+	InstructedAmount                  amount  `json:"instructedAmount,omitzero"`
 	CreditorName                      string  `json:"creditorName,omitempty"`
-	CreditorAccount                   account `json:"creditorAccount,omitempty"`
+	CreditorAccount                   account `json:"creditorAccount,omitzero"`
 	RemittanceInformationUnstructured string  `json:"remittanceInformationUnstructured,omitempty"`
 }
 
@@ -134,9 +134,9 @@ func (p *paymentInitiationType) MarshalJSON() ([]byte, error) {
 		Datatypes                         []string `json:"datatypes,omitempty"`
 		Identifier                        string   `json:"identifier,omitempty"`
 		Privileges                        []string `json:"privileges,omitempty"`
-		InstructedAmount                  amount   `json:"instructedAmount,omitempty"`
+		InstructedAmount                  amount   `json:"instructedAmount,omitzero"`
 		CreditorName                      string   `json:"creditorName,omitempty"`
-		CreditorAccount                   account  `json:"creditorAccount,omitempty"`
+		CreditorAccount                   account  `json:"creditorAccount,omitzero"`
 		RemittanceInformationUnstructured string   `json:"remittanceInformationUnstructured,omitempty"`
 	}{
 		Type:                              p.TypeName,
@@ -165,9 +165,9 @@ func (p *paymentInitiationType) UnmarshalJSON(b []byte) error {
 		Datatypes                         []string `json:"datatypes,omitempty"`
 		Identifier                        string   `json:"identifier,omitempty"`
 		Privileges                        []string `json:"privileges,omitempty"`
-		InstructedAmount                  amount   `json:"instructedAmount,omitempty"`
+		InstructedAmount                  amount   `json:"instructedAmount,omitzero"`
 		CreditorName                      string   `json:"creditorName,omitempty"`
-		CreditorAccount                   account  `json:"creditorAccount,omitempty"`
+		CreditorAccount                   account  `json:"creditorAccount,omitzero"`
 		RemittanceInformationUnstructured string   `json:"remittanceInformationUnstructured,omitempty"`
 	}
 	if err := json.Unmarshal(b, &aux); err != nil {

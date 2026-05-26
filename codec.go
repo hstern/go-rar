@@ -45,7 +45,7 @@ func Parse(raw json.RawMessage) (AuthorizationDetail, error) {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("%w: parse authorization_detail: %v", Err, err)
+		return nil, fmt.Errorf("%w: parse authorization_detail: %w", Err, err)
 	}
 	if probe.Type == "" {
 		return nil, &ValidationError{
@@ -61,7 +61,7 @@ func Parse(raw json.RawMessage) (AuthorizationDetail, error) {
 		dst = ctor()
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
-		return nil, fmt.Errorf("%w: parse %q: %v", Err, probe.Type, err)
+		return nil, fmt.Errorf("%w: parse %q: %w", Err, probe.Type, err)
 	}
 	return dst, nil
 }
@@ -82,7 +82,7 @@ func Parse(raw json.RawMessage) (AuthorizationDetail, error) {
 func ParseArray(raw json.RawMessage) (AuthorizationDetails, error) {
 	var elems []json.RawMessage
 	if err := json.Unmarshal(raw, &elems); err != nil {
-		return nil, fmt.Errorf("%w: parse authorization_details array: %v", Err, err)
+		return nil, fmt.Errorf("%w: parse authorization_details array: %w", Err, err)
 	}
 	out := make(AuthorizationDetails, 0, len(elems))
 	for i, e := range elems {
