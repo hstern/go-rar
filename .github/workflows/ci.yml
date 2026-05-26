@@ -68,14 +68,17 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: false
-      # example/three-flow/ is its own Go module so the library's
-      # go.mod / go.sum stay free of example-only deps. Build and
-      # vet from inside the module directory; the replace directive
-      # in its go.mod points at ../.. so this builds against the
-      # checked-out library source rather than the published tag.
-      - name: example go vet
-        working-directory: example/three-flow
-        run: go vet ./...
-      - name: example go build
-        working-directory: example/three-flow
-        run: go build ./...
+      # Every directory under example/ is its own Go module so the
+      # library's go.mod / go.sum stay free of example-only deps. Walk
+      # the example/ tree and run go vet + go build inside each one;
+      # the replace directive in each go.mod points at ../.. so the
+      # examples build against the checked-out library source rather
+      # than the published tag.
+      - name: example go vet + build
+        run: |
+          set -euo pipefail
+          for d in example/*/; do
+            echo "::group::$d"
+            (cd "$d" && go vet ./... && go build ./...)
+            echo "::endgroup::"
+          done

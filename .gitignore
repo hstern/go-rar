@@ -3,9 +3,10 @@
 *.out
 coverage.*
 
-# Compiled output of the example/three-flow demo program (its binary
-# shares the directory name, so `go build .` drops it next to main.go).
+# Compiled output of the example demo programs (each binary shares
+# the directory name, so `go build .` drops it next to main.go).
 /example/three-flow/three-flow
+/example/fosite-handler/fosite-handler
 
 # Editor / IDE state.
 .idea/
