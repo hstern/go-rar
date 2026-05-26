@@ -4,6 +4,7 @@
 package rar
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -147,13 +148,15 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 // produced payloads against the spec's figures and against captures
 // from third-party implementations during interop work.
 //
-// The implementation funnels through a single anonymous struct
-// declared in the desired wire order. Go's [encoding/json] emits
-// struct fields in declaration order, so the anonymous struct gives
-// the spec order for free — no manual buffer wrangling and no risk of
-// JSON-escaping bugs. The `omitempty` tag on every baseline member
-// elides absent fields, matching the spec's "all baseline members are
-// OPTIONAL" posture.
+// The implementation walks the §2 baseline fields in spec order and
+// emits each field conditionally into a single buffer. Hand-buffering
+// (rather than delegating to the stdlib through an anonymous struct
+// with `omitempty` tags) is required to preserve the nil-vs-length-
+// zero distinction on slice fields — see the empty-array section
+// below. The per-field write path delegates to [encoding/json.Marshal]
+// for the value itself, so JSON-escaping of the string and slice
+// contents stays in stdlib hands; only the member-ordering and
+// elision decisions live in this method.
 //
 // Strict-marshal opt-in. When the package-wide toggle is enabled via
 // [SetStrictMarshal] (off by default), MarshalJSON runs
@@ -174,41 +177,108 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 // for the toggle's concurrency contract and the test-isolation
 // pattern.
 //
-// Empty-array limitation. [Common.Locations], [Common.Actions],
-// [Common.Datatypes], and [Common.Privileges] are tagged
-// `omitempty`, which treats both nil and length-zero slices as
-// "empty" and elides the field. A payload that arrives as
-// `{"type":"common","locations":[]}` therefore round-trips as
-// `{"type":"common"}` — the explicit empty array becomes an absent
-// member. Sub-decision §3 in the design notes preserves the
-// nil-vs-empty distinction on unmarshal, but byte-stable round-trip
-// of an explicit empty array would require a hand-written marshal
-// path that distinguishes the two on output too. RFC 9396's
-// published examples never use an explicit empty array (members are
-// either omitted or non-empty), so the spec-fixture round-trip is
-// unaffected; consumers needing exact-empty-array preservation can
-// raise the issue and the strategy will be revisited.
+// Empty-array carriage. The four baseline slice fields
+// ([Common.Locations], [Common.Actions], [Common.Datatypes],
+// [Common.Privileges]) distinguish nil from length-zero on output:
+// a nil slice is elided entirely (matching the spec's "absent member"
+// shape), and a non-nil length-zero slice is emitted as the JSON
+// literal `[]`. A payload that arrives as
+// `{"type":"common","locations":[]}` therefore round-trips byte-
+// stably — Parse populates Locations as a non-nil empty slice (sub-
+// decision §3 in the design notes preserves the distinction on
+// unmarshal), and MarshalJSON now preserves it on the wire. The
+// stdlib `omitempty` rule on `[]string` cannot make this distinction
+// because it collapses both nil and length-zero into "empty" and
+// elides the field; the hand-written marshal path here is the
+// targeted fix. RFC 9396's published examples never use an explicit
+// empty array, so the spec-fixture round-trip is unchanged by the
+// fix; the change matters only for downstream consumers that observe
+// the explicit-empty case on the wire.
+//
+// [Common.Identifier] is a string, not a slice, so the nil-vs-empty
+// distinction does not apply: an empty string elides the member,
+// matching the stdlib `omitempty` semantics the field used to carry.
+// Go's string type cannot represent "present-but-empty" the way a
+// pointer-or-slice can; the carriage of an explicit-empty-string
+// identifier is left to a future API revision if a real-world payload
+// ever requires it.
 func (c *CommonType) MarshalJSON() ([]byte, error) {
 	if strictMarshal() {
 		if err := c.Validate(); err != nil {
 			return nil, err
 		}
 	}
-	return json.Marshal(struct {
-		Type       string   `json:"type"`
-		Locations  []string `json:"locations,omitempty"`
-		Actions    []string `json:"actions,omitempty"`
-		Datatypes  []string `json:"datatypes,omitempty"`
-		Identifier string   `json:"identifier,omitempty"`
-		Privileges []string `json:"privileges,omitempty"`
-	}{
-		Type:       c.TypeName,
-		Locations:  c.Locations,
-		Actions:    c.Actions,
-		Datatypes:  c.Datatypes,
-		Identifier: c.Identifier,
-		Privileges: c.Privileges,
-	})
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+
+	// type — required, always first. Routed through json.Marshal so
+	// the string contents are escaped by stdlib rules (quotes,
+	// control characters, non-ASCII). MarshalJSON does not enforce
+	// non-emptiness here — that's the strict-marshal Validate path
+	// above and the Parse-time check on inbound.
+	buf.WriteString(`"type":`)
+	typeBytes, err := json.Marshal(c.TypeName)
+	if err != nil {
+		return nil, fmt.Errorf("marshal type: %w", err)
+	}
+	buf.Write(typeBytes)
+
+	// §2 baseline slice fields, in spec order. Each is emitted iff
+	// non-nil; length-zero non-nil slices marshal as `[]`. See the
+	// "Empty-array carriage" godoc above.
+	if c.Locations != nil {
+		buf.WriteString(`,"locations":`)
+		if err := writeStringSliceJSON(&buf, c.Locations); err != nil {
+			return nil, fmt.Errorf("marshal locations: %w", err)
+		}
+	}
+	if c.Actions != nil {
+		buf.WriteString(`,"actions":`)
+		if err := writeStringSliceJSON(&buf, c.Actions); err != nil {
+			return nil, fmt.Errorf("marshal actions: %w", err)
+		}
+	}
+	if c.Datatypes != nil {
+		buf.WriteString(`,"datatypes":`)
+		if err := writeStringSliceJSON(&buf, c.Datatypes); err != nil {
+			return nil, fmt.Errorf("marshal datatypes: %w", err)
+		}
+	}
+	// identifier — string field, keep stdlib omitempty semantics
+	// (empty string elides). See the godoc above for why a string
+	// cannot carry the same nil-vs-empty distinction a slice can.
+	if c.Identifier != "" {
+		buf.WriteString(`,"identifier":`)
+		idBytes, err := json.Marshal(c.Identifier)
+		if err != nil {
+			return nil, fmt.Errorf("marshal identifier: %w", err)
+		}
+		buf.Write(idBytes)
+	}
+	if c.Privileges != nil {
+		buf.WriteString(`,"privileges":`)
+		if err := writeStringSliceJSON(&buf, c.Privileges); err != nil {
+			return nil, fmt.Errorf("marshal privileges: %w", err)
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// writeStringSliceJSON writes a `[]string` as a JSON array into buf
+// using stdlib encoding rules. The stdlib emits a non-nil length-zero
+// slice as `[]` (a nil slice would also encode as `[]` here, but
+// MarshalJSON only invokes this helper after the nil check above —
+// the elide-on-nil decision is the caller's, not the helper's). The
+// helper is a thin wrapper rather than a one-liner so the per-field
+// emit sites in MarshalJSON read uniformly.
+func writeStringSliceJSON(buf *bytes.Buffer, ss []string) error {
+	b, err := json.Marshal(ss)
+	if err != nil {
+		return err
+	}
+	buf.Write(b)
+	return nil
 }
 
 // MarshalJSON emits the captured JSON object verbatim. For an

@@ -86,6 +86,28 @@ identically.
 }
 ```
 
+### `empty_array.json` — library-internal (not from RFC 9396)
+
+A single `common`-type detail carrying an explicit empty `actions`
+array. **This fixture is not drawn from RFC 9396** — the spec's
+published examples never use an explicit empty array (members are
+either omitted or non-empty). The fixture exists to exercise the
+present-but-empty round-trip invariant introduced alongside the
+hand-written `*CommonType.MarshalJSON` path: a payload with
+`"actions": []` must survive `Parse` → `Marshal` byte-stably, with
+the empty array preserved rather than elided. Sits in the conformance
+corpus so the same round-trip and validation machinery hits this case
+uniformly with the spec-derived fixtures.
+
+```json
+[
+  {
+    "type": "common",
+    "actions": []
+  }
+]
+```
+
 ### `introspection.json` — RFC 9396 §9
 
 The full OAuth introspection-response envelope. Same rationale as

@@ -67,22 +67,22 @@ func fixtureNames(fx map[string][]byte) []string {
 // [ParseArray] → [ValidateAll] → [json.Marshal]. This is the
 // "wire-shape fidelity" guarantee the library exists to provide.
 //
-// All four current fixtures use `type` values (customer_information,
-// account_information, payment_initiation) that are NOT registered —
-// only "common" is built-in — so every parsed element is an
-// [*UnknownType] whose MarshalJSON emits the captured Raw bytes
-// verbatim. That makes this test the canonical exercise of the
-// forward-compatibility path against real spec payloads. A registered-
-// type round-trip is exercised separately by codec / marshal tests
-// using synthesized `type:"common"` payloads.
+// The four spec-derived fixtures use `type` values
+// (customer_information, account_information, payment_initiation) that
+// are NOT registered — only "common" is built-in — so every parsed
+// element on those payloads is an [*UnknownType] whose MarshalJSON
+// emits the captured Raw bytes verbatim. That makes the spec-derived
+// half of this test the canonical exercise of the forward-
+// compatibility path against real spec payloads. A registered-type
+// round-trip is exercised separately by codec / marshal tests using
+// synthesized `type:"common"` payloads.
 //
-// Empty-array carriage caveat: none of the four spec fixtures contain
-// an explicit empty array like `"actions":[]`, so the byte-stability
-// assertion is unaffected by the omitempty-on-[]string limitation
-// documented on [CommonType.MarshalJSON]. If a future fixture
-// introduces an explicit empty array on a CommonType element, this
-// test will fail loudly and signal that the empty-array carriage
-// strategy needs to be revisited.
+// The library-internal `empty_array` fixture parses to a *CommonType*
+// (not an UnknownType) — its `type` is `common`, which IS registered.
+// That makes the empty-array case the canonical exercise of the
+// CommonType hand-written marshal path: the byte-stability assertion
+// here catches a regression in either the nil-vs-empty preservation
+// on unmarshal or the per-field elision rule on marshal.
 func TestConformance_RoundTripByteStable(t *testing.T) {
 	t.Parallel()
 	fx := specfixtures.All()

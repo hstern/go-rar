@@ -20,10 +20,17 @@
 //   - TokenResponse: §7 full token-response envelope, including the
 //     surrounding OAuth members (access_token, token_type, ...).
 //   - Introspection: §9 full introspection-response envelope.
+//   - EmptyArray:    library-internal fixture (NOT from RFC 9396 —
+//     the spec never uses explicit empty arrays in its examples)
+//     pinning the post-fix invariant that a CommonType carrying a
+//     present-but-empty array (`"actions":[]`) round-trips byte-
+//     stably through Parse / Marshal. Sits in the conformance corpus
+//     so the round-trip assertion machinery exercises it uniformly
+//     with the spec-derived fixtures.
 //
-// Each fixture is the verbatim payload from the RFC, modulo
-// whitespace canonicalization. The library never modifies these —
-// they're the conformance source of truth.
+// Each spec-derived fixture is the verbatim payload from the RFC,
+// modulo whitespace canonicalization. The library never modifies
+// these — they're the conformance source of truth.
 package specfixtures
 
 import _ "embed"
@@ -53,6 +60,19 @@ var TokenResponse []byte
 //go:embed introspection.json
 var Introspection []byte
 
+// EmptyArray is a library-internal fixture (not drawn from RFC 9396)
+// pinning the explicit-empty-array round-trip invariant introduced
+// alongside the hand-written `*CommonType.MarshalJSON` path. RFC 9396's
+// published examples never use `"actions":[]` (members are either
+// omitted or non-empty), so the spec-derived fixtures cannot exercise
+// the present-but-empty case; this fixture fills that gap so the
+// conformance round-trip suite catches a regression in either the
+// unmarshal nil-vs-empty preservation or the marshal-side per-field
+// elision rule.
+//
+//go:embed empty_array.json
+var EmptyArray []byte
+
 // All returns the full set of fixtures keyed by a stable name.
 //
 // Consumers (the phase-5 conformance test suite) typically iterate
@@ -65,5 +85,6 @@ func All() map[string][]byte {
 		"multiple":       Multiple,
 		"token_response": TokenResponse,
 		"introspection":  Introspection,
+		"empty_array":    EmptyArray,
 	}
 }
