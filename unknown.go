@@ -93,9 +93,22 @@ func (u *UnknownType) Type() string { return u.TypeName }
 // baseline. Implements [AuthorizationDetail].
 func (u *UnknownType) Common() *Common { return nil }
 
-// Validate returns nil. See the type-level documentation for the
-// rationale — the library cannot judge well-formedness of a type it
-// does not understand. Implements [AuthorizationDetail].
+// Validate returns nil unconditionally — the library cannot judge
+// well-formedness of a type it does not natively understand, so it
+// trusts the source. RFC 9396 §10 (IANA considerations) defines the
+// `type` value space as open: new discriminators are registered
+// independently of any library release, and their per-type
+// well-formedness rules live in those extension specifications, not
+// here. Applying the §2 baseline rules to an UnknownType would also
+// be unsafe — an extension type's wire shape may legitimately rename,
+// repurpose, or omit the §2 fields, and the library has no contract
+// telling it which is the case.
+//
+// Consumers that want stricter handling of unrecognized types can
+// inspect TypeName after parse and reject what they don't recognize
+// at the application layer, or register a type-specific constructor
+// via RegisterType so the payload dispatches to a carrier whose
+// Validate enforces the right rules. Implements [AuthorizationDetail].
 func (u *UnknownType) Validate() error { return nil }
 
 // sealed satisfies the unexported marker on [AuthorizationDetail],

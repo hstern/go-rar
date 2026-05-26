@@ -85,12 +85,34 @@ func (c *CommonType) Type() string { return c.TypeName }
 // embedded field, so writes through it mutate the receiver.
 func (c *CommonType) Common() *Common { return &c.commonBaseline }
 
-// Validate is a stub awaiting the validation phase. It currently
-// returns nil. A later commit replaces this body with the RFC 9396
-// §2 well-formedness check — at minimum the type-required rule
-// (non-empty TypeName) plus the opt-in URI syntax check on
-// Locations entries. Implements [AuthorizationDetail].
-func (c *CommonType) Validate() error { return nil }
+// Validate enforces the RFC 9396 §2 well-formedness rules that apply
+// categorically to every authorization_details element, regardless of
+// type-specific shape. Implements [AuthorizationDetail].
+//
+// Rules currently enforced:
+//
+//   - "type-required" — TypeName must be a non-empty string. RFC 9396
+//     §2 makes the `type` member required and non-empty; an element
+//     missing the discriminator cannot be dispatched and is rejected
+//     here as a structural error rather than a per-type concern.
+//
+// Validate returns the first violation as a [*ValidationError]; on a
+// well-formed value it returns nil. The URI syntax check on Locations
+// entries (and the non-empty-string check on Actions / Datatypes /
+// Privileges) is added by the next commit via shared helpers — by
+// design this method enforces only the categorical §2 MUST that has
+// no per-type variability, and defers the composable per-field checks
+// to the helper layer so other type carriers can reuse them.
+func (c *CommonType) Validate() error {
+	if c.TypeName == "" {
+		return &ValidationError{
+			Rule:   "type-required",
+			Type:   "",
+			Reason: "type member must be a non-empty string",
+		}
+	}
+	return nil
+}
 
 // sealed satisfies the unexported marker on [AuthorizationDetail],
 // keeping CommonType inside the package's sealed-interface posture.
