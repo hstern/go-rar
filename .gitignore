@@ -1,0 +1,14 @@
+# Test binaries and coverage output.
+*.test
+*.out
+coverage.*
+
+# Editor / IDE state.
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS / Windows filesystem cruft.
+.DS_Store
+Thumbs.db
