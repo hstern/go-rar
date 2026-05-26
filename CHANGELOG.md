@@ -10,6 +10,23 @@ without bumping the spec-version constant.
 
 ## [Unreleased]
 
+### Added
+
+- **`Extension` embeddable base struct + `Baseline` public alias.**
+  Consumer-defined types satisfying `AuthorizationDetail` from outside
+  the `rar` package now embed `rar.Extension` to inherit the sealed
+  `sealed()` marker, the §2 baseline fields (via the `Baseline`
+  alias), and default `Type` / `Common` / `Validate` / `MarshalJSON` /
+  `UnmarshalJSON` implementations. The consumer adds type-specific
+  fields, overrides the methods that need type-specific behavior, and
+  registers via `RegisterType`. The previously-documented
+  sealed-interface limit on consumer typed extensions no longer
+  applies; the README's Extensibility section has been rewritten to
+  document the new pattern, and `extension_external_test.go`
+  exercises the out-of-package consumer pattern end-to-end (including
+  the compile-time assertion that the embedding-grants-sealed path
+  holds).
+
 ### Fixed
 
 - **Explicit empty arrays now round-trip byte-stably.** A payload

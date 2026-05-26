@@ -109,13 +109,26 @@ func ParseArray(raw json.RawMessage) (AuthorizationDetails, error) {
 // [ValidationError]; UnmarshalJSON's job is to populate fields from
 // whatever bytes the wire produced, not to gate on them.
 //
-// The aux struct mirrors CommonType's wire shape — `type` plus the
-// five §2 baseline members — and is the standard pattern for
-// implementing UnmarshalJSON on a type that embeds another struct
-// without triggering infinite recursion (calling json.Unmarshal on a
-// *CommonType from inside *CommonType.UnmarshalJSON would re-enter
-// this method).
+// Delegates the field-by-field decode to [unmarshalCommonShape], the
+// shared §2-only wire-shape decoder used by both [CommonType] and
+// [Extension].
 func (c *CommonType) UnmarshalJSON(b []byte) error {
+	return unmarshalCommonShape(b, &c.TypeName, &c.commonBaseline)
+}
+
+// unmarshalCommonShape decodes the §2-only wire shape — `type` plus
+// the five §2 baseline members — into the supplied TypeName pointer
+// and [Common] destination. Symmetric to [marshalCommonShape] and
+// shared by [CommonType.UnmarshalJSON] and [Extension.UnmarshalJSON];
+// consumer types overriding UnmarshalJSON typically write their own
+// variant rather than calling this helper, since they need to capture
+// type-specific members in the same pass.
+//
+// The aux-struct pattern breaks the would-be infinite recursion that
+// would otherwise occur if we called json.Unmarshal on a *CommonType
+// (or *Extension) from inside its own UnmarshalJSON — the embedded
+// json.Unmarshaler dispatch would re-enter the calling method.
+func unmarshalCommonShape(b []byte, typeName *string, c *Common) error {
 	var aux struct {
 		Type       string   `json:"type"`
 		Locations  []string `json:"locations,omitempty"`
@@ -127,7 +140,7 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &aux); err != nil {
 		return err
 	}
-	c.TypeName = aux.Type
+	*typeName = aux.Type
 	c.Locations = aux.Locations
 	c.Actions = aux.Actions
 	c.Datatypes = aux.Datatypes
@@ -208,6 +221,27 @@ func (c *CommonType) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 	}
+	return marshalCommonShape(c.TypeName, &c.commonBaseline)
+}
+
+// marshalCommonShape writes the §2-only wire shape: `type` first,
+// then §2 baseline members in spec order, preserving
+// nil-vs-length-zero on slice fields (a nil slice elides, a non-nil
+// length-zero slice emits as `[]`; see the "Empty-array carriage"
+// godoc on [CommonType.MarshalJSON] for the rationale).
+//
+// Shared by [CommonType.MarshalJSON] and [Extension.MarshalJSON];
+// consumer types overriding MarshalJSON typically write their own
+// hand-rolled variant that appends type-specific members in declared
+// order rather than calling this helper, since the helper only knows
+// the §2 baseline.
+//
+// The helper itself does NOT consult [strictMarshal]; the caller runs
+// its own Validate first if the toggle is on. Keeping the toggle check
+// at the calling sites preserves each public MarshalJSON's documented
+// behavior — each calls its own type's Validate, with its own godoc
+// identity, so the strict-marshal contract stays exact.
+func marshalCommonShape(typeName string, c *Common) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
 
@@ -215,17 +249,16 @@ func (c *CommonType) MarshalJSON() ([]byte, error) {
 	// the string contents are escaped by stdlib rules (quotes,
 	// control characters, non-ASCII). MarshalJSON does not enforce
 	// non-emptiness here — that's the strict-marshal Validate path
-	// above and the Parse-time check on inbound.
+	// at the caller and the Parse-time check on inbound.
 	buf.WriteString(`"type":`)
-	typeBytes, err := json.Marshal(c.TypeName)
+	typeBytes, err := json.Marshal(typeName)
 	if err != nil {
 		return nil, fmt.Errorf("marshal type: %w", err)
 	}
 	buf.Write(typeBytes)
 
 	// §2 baseline slice fields, in spec order. Each is emitted iff
-	// non-nil; length-zero non-nil slices marshal as `[]`. See the
-	// "Empty-array carriage" godoc above.
+	// non-nil; length-zero non-nil slices marshal as `[]`.
 	if c.Locations != nil {
 		buf.WriteString(`,"locations":`)
 		if err := writeStringSliceJSON(&buf, c.Locations); err != nil {
@@ -245,8 +278,8 @@ func (c *CommonType) MarshalJSON() ([]byte, error) {
 		}
 	}
 	// identifier — string field, keep stdlib omitempty semantics
-	// (empty string elides). See the godoc above for why a string
-	// cannot carry the same nil-vs-empty distinction a slice can.
+	// (empty string elides). A string cannot carry the same
+	// nil-vs-empty distinction a slice can.
 	if c.Identifier != "" {
 		buf.WriteString(`,"identifier":`)
 		idBytes, err := json.Marshal(c.Identifier)

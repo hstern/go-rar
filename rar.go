@@ -32,6 +32,10 @@
 //     [Common.Identifier], [Common.Privileges]).
 //   - [CommonType] — the §2-only built-in, registered under the
 //     "common" discriminator.
+//   - [Extension] — the embeddable base for consumer-defined types
+//     that satisfy [AuthorizationDetail] from outside the rar package
+//     (inherits the sealed marker via embedding) and gain the §2
+//     baseline via the [Baseline] alias.
 //   - [UnknownType] — the forward-compatibility carrier for any
 //     discriminator the registry does not recognize (round-trips
 //     verbatim).
@@ -67,26 +71,30 @@ const SpecVersion = "RFC 9396"
 // authorization_details JSON array — the typed Go form of one entry
 // in the discriminated union.
 //
-// The interface is sealed: implementations must live inside this
-// package. The sanctioned way for downstream code to add a new
+// The interface is sealed via an unexported sealed() marker:
+// implementations cannot be supplied by satisfying the method set
+// alone. The sanctioned way for downstream code to register a new
 // concrete type is [RegisterType], which installs an unmarshal
 // constructor in the dispatch table. Sealing keeps the wire-shape
 // contract under the package's control — every value an unmarshal
 // can produce is one this package knows how to marshal and validate
 // consistently.
 //
-// Built-in implementations planned for this surface:
+// Built-in implementations:
 //
-//   - CommonType — the §2-only carrier registered under the
+//   - [CommonType] — the §2-only carrier registered under the
 //     "common" discriminator.
-//   - UnknownType — the forward-compatibility carrier returned
+//   - [UnknownType] — the forward-compatibility carrier returned
 //     for any type value not present in the dispatch table at
 //     unmarshal time.
 //
-// Concrete consumer types registered via RegisterType also satisfy
-// AuthorizationDetail; the sealed marker is satisfied by embedding
-// one of the built-in carriers (typically [Common], via [CommonType]
-// or a custom struct that embeds Common).
+// Consumer-defined types satisfy AuthorizationDetail by embedding
+// [Extension], which transitively grants the sealed() marker via
+// Go's method promotion rules. A consumer struct that embeds
+// rar.Extension can register through [RegisterType] and ride the
+// same dispatch path as the built-ins; see [Extension] for the
+// consumer pattern and `extension_external_test.go` for an
+// out-of-package worked example.
 type AuthorizationDetail interface {
 	// Type returns the spec's `type` discriminator value for this
 	// element. Per RFC 9396 §2, every authorization_details element
