@@ -194,18 +194,39 @@ constructors for the `type` discriminator. Built-in: only `common`
 `*UnknownType`, which preserves the wire bytes verbatim so the detail
 round-trips even when the library cannot natively interpret it.
 
-The `AuthorizationDetail` interface is sealed to the `rar` package, so
-consumers cannot supply their own concrete types from outside the
-package. Today, `RegisterType` is most useful for registering
-alternative constructors for a specific `type` discriminator (typically
-returning a `*CommonType` initialized with type-specific defaults).
-Richer downstream typing — where a consumer defines its own struct
-with type-specific fields and registers it directly — is a known
-limitation tracked for post-`v0.1.0`. Consumers needing typed access to
-extension fields today parse `*UnknownType.Raw` themselves.
+Consumer-defined typed extensions land via the embeddable `Extension`
+base. A consumer struct that embeds `rar.Extension` satisfies the
+sealed `AuthorizationDetail` interface from outside the package (the
+sealed marker is inherited via embedding without being exported),
+inherits the §2 baseline validation rules, and adds its own
+type-specific fields plus a `RegisterType` call:
 
-For a worked example of the in-package extension pattern, see
-[`extension_test.go`](extension_test.go).
+```go
+type PaymentInitiation struct {
+    rar.Extension
+    CreditorName string `json:"creditorName,omitempty"`
+}
+
+// Override Validate to add type-specific rules; the embedded
+// Extension.Validate covers the §2 baseline.
+func (p *PaymentInitiation) Validate() error { /* ... */ }
+
+// Override MarshalJSON / UnmarshalJSON to handle the type-specific
+// fields in spec order (type first, then §2 baseline, then your
+// members in declared order). The library's CommonType is the
+// template.
+func (p *PaymentInitiation) MarshalJSON() ([]byte, error) { /* ... */ }
+func (p *PaymentInitiation) UnmarshalJSON(b []byte) error { /* ... */ }
+
+rar.RegisterType("payment_initiation", func() rar.AuthorizationDetail {
+    return &PaymentInitiation{Extension: rar.Extension{TypeName: "payment_initiation"}}
+})
+```
+
+See [`extension_external_test.go`](extension_external_test.go) for the
+complete worked example exercised from an out-of-package test, and
+[`extension_test.go`](extension_test.go) for the equivalent in-package
+pattern that mirrors the spec's §4 `payment_initiation` figure.
 
 ## Design
 

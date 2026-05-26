@@ -35,6 +35,12 @@ type commonBaseline = Common
 // constructor wiring are codec concerns; this file declares only the
 // type and its [AuthorizationDetail]-satisfying methods.
 //
+// *CommonType is functionally equivalent to a directly-used
+// *[Extension]; the library ships both because CommonType is the
+// registered "common" discriminator while Extension is the embeddable
+// base for consumer-defined types that need to satisfy the sealed
+// [AuthorizationDetail] interface from outside the rar package.
+//
 // CommonType embeds the §2 baseline (via the [commonBaseline] alias —
 // see that type's documentation for why the alias is necessary)
 // rather than holding a *Common field, so the §2 fields sit directly
