@@ -45,10 +45,11 @@ import "encoding/json"
 //     keys; UnknownType extends that guarantee to the whole element.
 //
 // Marshal and unmarshal wiring for UnknownType lives in the codec
-// (a later commit). This file declares only the type and its
-// AuthorizationDetail-satisfying methods; the dispatch that produces
-// an *UnknownType from an unrecognized `type` member, and the inverse
-// that writes Raw back out, are codec concerns.
+// (see [UnknownType.MarshalJSON] and [UnknownType.UnmarshalJSON]).
+// This file declares only the type and its [AuthorizationDetail]-
+// satisfying methods; the dispatch that produces an *UnknownType from
+// an unrecognized `type` member, and the inverse that writes Raw back
+// out, are codec concerns.
 //
 // Implementations notes for [AuthorizationDetail]:
 //

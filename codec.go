@@ -216,8 +216,8 @@ func (c *CommonType) MarshalJSON() ([]byte, error) {
 // object bytes (see [UnknownType.UnmarshalJSON]), so the output is
 // byte-identical to the input — the round-trip guarantee the
 // forward-compat carrier exists to provide. The bytes are returned
-// as-is; stdlib [encoding/json] accepts a [json.RawMessage]-shaped
-// return without re-parsing.
+// as-is; stdlib [encoding/json] accepts a [json.RawMessage] return
+// without re-parsing.
 //
 // When Raw is empty — the case where a consumer hand-constructs an
 // UnknownType (TypeName set, Raw never populated) to forward an
@@ -252,9 +252,9 @@ func (u *UnknownType) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON captures the entire JSON object verbatim into Raw and
 // surfaces the `type` discriminator on TypeName. The verbatim capture
 // is what makes [UnknownType] safe to round-trip — the inverse
-// MarshalJSON (landing in a later commit) emits Raw byte-for-byte, so
-// an unrecognized type flows through the library without reordering
-// keys, dropping members, or normalizing whitespace.
+// [UnknownType.MarshalJSON] emits Raw byte-for-byte, so an unrecognized
+// type flows through the library without reordering keys, dropping
+// members, or normalizing whitespace.
 //
 // The input slice is copied before storing in Raw because the stdlib
 // JSON decoder may reuse its input buffer; aliasing it directly would

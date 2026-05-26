@@ -69,8 +69,8 @@ func RegisterType(name string, ctor func() AuthorizationDetail) error {
 
 // lookup returns the constructor registered for name, or nil if no
 // entry exists. It is unexported because it is a codec internal —
-// callers outside this package reach the registry through Parse and
-// UnmarshalJSON (landing in later commits), not directly.
+// callers outside this package reach the registry through [Parse] and
+// the per-type UnmarshalJSON methods, not directly.
 func lookup(name string) func() AuthorizationDetail {
 	typeRegistry.mu.RLock()
 	defer typeRegistry.mu.RUnlock()

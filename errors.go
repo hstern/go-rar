@@ -22,9 +22,9 @@ import (
 //	}
 var Err = errors.New("rar")
 
-// ErrTypeReserved is returned by RegisterType (landing in a later
-// commit) when a caller attempts to register a constructor for a
-// `type` value that the library has already populated as a built-in.
+// ErrTypeReserved is returned by [RegisterType] when a caller
+// attempts to register a constructor for a `type` value that the
+// library has already populated as a built-in.
 //
 // RFC 9396 deliberately defines no built-in type values of its own;
 // the only name this library reserves is "common", the §2-only
@@ -43,7 +43,7 @@ var ErrTypeReserved = fmt.Errorf("%w: type name is reserved for a built-in", Err
 
 // ValidationError reports a single RFC 9396 well-formedness rule
 // violation found by [AuthorizationDetail.Validate] (or by the
-// codec when StrictMarshal is enabled, landing in a later commit).
+// codec when [SetStrictMarshal] is enabled).
 //
 // Fields:
 //
