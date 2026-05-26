@@ -1,0 +1,1 @@
+[{"type":"customer_information","locations":["https://example.com/customers"],"actions":["read","write"],"datatypes":["contacts","photos"]}]
