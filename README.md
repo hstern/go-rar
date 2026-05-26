@@ -5,11 +5,9 @@ A Go library implementing
 
 [rfc9396]: https://www.rfc-editor.org/rfc/rfc9396.html
 
-> **Status: pre-release.** API surface is being shaped against RFC 9396
-> §2–§9 with the goal of byte-stable round-trip on every spec example.
-> First tag will be `v0.1.0`. The module path
-> `github.com/hstern/go-rar` is stable from the first commit; do not
-> depend on the repo until `v0.1.0` is tagged.
+> **Status: pre-release.** The public API surface is feature-complete
+> against RFC 9396 §2–§9; the `v0.1.0` tag is next. The module path
+> `github.com/hstern/go-rar` is stable from the first commit.
 
 ## What it is
 
@@ -50,7 +48,120 @@ Requires Go 1.26 or newer.
 
 ## Quickstart
 
-_To be filled in once Phase 3 (codec) lands._
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+
+    "github.com/hstern/go-rar"
+)
+
+func main() {
+    const payload = `[{"type":"common","actions":["read","write"],"locations":["https://api.example.com/v1/data"]}]`
+
+    details, err := rar.ParseArray([]byte(payload))
+    if err != nil {
+        log.Fatal(err)
+    }
+    if err := rar.ValidateAll(details); err != nil {
+        log.Fatal(err)
+    }
+    fmt.Printf("parsed %d authorization detail(s); first type = %q\n", len(details), details[0].Type())
+}
+```
+
+Parse, then validate, then use. `ParseArray` is lenient — members
+outside the §2 baseline are silently dropped per the spec's
+MUST-ignore-unknown convention, and a `type` value the library has no
+constructor for lands in `*UnknownType` rather than erroring.
+Validation is opt-in via `ValidateAll`; `MarshalJSON` stays lenient by
+default and can be flipped to fail-fast via `SetStrictMarshal(true)`.
+
+## Per-flow examples
+
+RFC 9396 carries the same `authorization_details` JSON shape through
+three OAuth touchpoints. The library has one set of types for all
+three; only the envelope changes.
+
+### Authorization request — `EncodeForm`
+
+```go
+c := &rar.CommonType{TypeName: "common"}
+c.Actions = []string{"read"}
+c.Locations = []string{"https://api.example.com/v1/data"}
+details := rar.AuthorizationDetails{c}
+
+value, err := rar.EncodeForm(details)
+if err != nil {
+    log.Fatal(err)
+}
+
+v := url.Values{}
+v.Set("authorization_details", value)
+v.Set("response_type", "code")
+v.Set("client_id", "client123")
+// Wire into the redirect URL: https://as.example.com/authorize?<v.Encode()>
+```
+
+**Composing a `CommonType`.** The embedded §2 baseline is reached
+through the promoted field selectors (`c.Actions`, `c.Locations`, …) or
+through `c.Common()`. The embedded field itself is unexported, so a
+composite literal naming the embedded field does not compile from
+outside the package; assign the §2 fields after construction as above.
+
+`EncodeForm` returns the JSON-encoded array; the form encoder
+(`url.Values.Encode()`, `http.Request.PostForm`, …) owns the
+percent-encoding step.
+
+### Token response — `ParseArray` from a JSON body
+
+```go
+var resp struct {
+    AccessToken          string          `json:"access_token"`
+    TokenType            string          `json:"token_type"`
+    ExpiresIn            int             `json:"expires_in"`
+    AuthorizationDetails json.RawMessage `json:"authorization_details"`
+}
+if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+    log.Fatal(err)
+}
+details, err := rar.ParseArray(resp.AuthorizationDetails)
+if err != nil {
+    log.Fatal(err)
+}
+_ = details
+```
+
+Decode the envelope yourself; hand the `json.RawMessage` for
+`authorization_details` to `ParseArray`. Using `json.RawMessage` rather
+than `[]any` or `map[string]any` preserves the exact wire bytes for any
+type the library does not natively recognize (those land in
+`*UnknownType.Raw` for downstream handling).
+
+### Introspection response — same shape, different envelope
+
+```go
+var resp struct {
+    Active               bool            `json:"active"`
+    Scope                string          `json:"scope,omitempty"`
+    ClientID             string          `json:"client_id,omitempty"`
+    AuthorizationDetails json.RawMessage `json:"authorization_details,omitempty"`
+}
+if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+    log.Fatal(err)
+}
+details, err := rar.ParseArray(resp.AuthorizationDetails)
+if err != nil {
+    log.Fatal(err)
+}
+_ = details
+```
+
+Per RFC 9396 §9 the introspection response carries
+`authorization_details` with the same JSON shape as the token response.
+Three flows, one library type.
 
 ## How this fits with OAuth 2.0
 
@@ -70,6 +181,27 @@ server, resource server, or client library is the OAuth library's job.
 The library plugs in alongside any stdlib `net/http` server or any
 existing OAuth 2.0 client/server stack.
 
+## Extensibility
+
+`RegisterType(name, ctor)` lets downstream code register custom
+constructors for the `type` discriminator. Built-in: only `common`
+(the §2-only carrier). Any other `type` value falls through to
+`*UnknownType`, which preserves the wire bytes verbatim so the detail
+round-trips even when the library cannot natively interpret it.
+
+The `AuthorizationDetail` interface is sealed to the `rar` package, so
+consumers cannot supply their own concrete types from outside the
+package. Today, `RegisterType` is most useful for registering
+alternative constructors for a specific `type` discriminator (typically
+returning a `*CommonType` initialized with type-specific defaults).
+Richer downstream typing — where a consumer defines its own struct
+with type-specific fields and registers it directly — is a known
+limitation tracked for post-`v0.1.0`. Consumers needing typed access to
+extension fields today parse `*UnknownType.Raw` themselves.
+
+For a worked example of the in-package extension pattern, see
+[`extension_test.go`](extension_test.go).
+
 ## Design
 
 The library's design rationale will be summarized in `DESIGN.md` ahead
@@ -81,11 +213,23 @@ of the `v0.1.0` tag. The headline decisions:
   `type` discriminator.
 - **Lenient on unmarshal, strict on marshal.** Postel's law: decode
   whatever the wire gave us, validate at the marshal boundary only
-  when `StrictMarshal(true)` is set.
+  when `SetStrictMarshal(true)` is set.
 - Byte-stable output: `type` first, then the §2 common members in
   spec order, then any type-specific members in declared order.
 - Open-extension fields are `json.RawMessage`, not `map[string]any` —
   interop scenarios pin exact JSON bytes, and `map` reorders keys.
+
+## Stability
+
+- **Pre-`v0.1.0`**: API surface may change without notice.
+- **`v0.1.x`**: additive changes only within the `v0.x` line.
+- **`v1.0.0`** ships when (a) at least one external OAuth consumer has
+  integrated and stayed integrated for a release cycle, and (b) at
+  least one IANA-published `type` value has been exercised end-to-end
+  (typically via consumer `RegisterType` calls).
+- **`v2.0+`**: future-major handling follows the `go-jose` branch
+  pattern (versioned `go.mod` module path, prior majors preserved on
+  dedicated branches).
 
 ## Compatibility
 
@@ -94,7 +238,7 @@ of the `v0.1.0` tag. The headline decisions:
   without changing the constant.
 - **Go version**: 1.26+.
 - **Dependencies**: standard library only, at runtime. Test
-  dependencies, if any, are listed in `go.mod`.
+  dependencies: none. Standard library only.
 - **Library SemVer** is independent of the spec version. Major-version
   handling follows the `go-jose` branch pattern (no versioned
   subdirectories — `vN` lives in `go.mod` on a `vN` branch).
