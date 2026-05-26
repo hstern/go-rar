@@ -135,6 +135,104 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// MarshalJSON serializes the receiver as a JSON object whose member
+// order matches every example in RFC 9396 §2–§9: the `type`
+// discriminator first, then the five §2 baseline members in the order
+// the spec enumerates them — locations, actions, datatypes,
+// identifier, privileges. RFC 9396 does not formally mandate field
+// ordering on the wire, but every published example puts `type` first
+// and lists the §2 baseline in the spec's enumeration order, so the
+// library produces output that is byte-identical to those examples
+// (modulo whitespace). Byte-stability matters because consumers diff
+// produced payloads against the spec's figures and against captures
+// from third-party implementations during interop work.
+//
+// The implementation funnels through a single anonymous struct
+// declared in the desired wire order. Go's [encoding/json] emits
+// struct fields in declaration order, so the anonymous struct gives
+// the spec order for free — no manual buffer wrangling and no risk of
+// JSON-escaping bugs. The `omitempty` tag on every baseline member
+// elides absent fields, matching the spec's "all baseline members are
+// OPTIONAL" posture.
+//
+// MarshalJSON does NOT validate. The library's lenient-marshal
+// (Postel's-law) posture means a CommonType with an empty TypeName
+// still marshals — the output is technically out-of-spec (RFC 9396 §2
+// requires `type` to be non-empty), but enforcement is opt-in via
+// [CommonType.Validate] or, once it lands, the StrictMarshal toggle.
+// Marshal's job is to faithfully serialize whatever fields the
+// receiver carries.
+//
+// Empty-array limitation. [Common.Locations], [Common.Actions],
+// [Common.Datatypes], and [Common.Privileges] are tagged
+// `omitempty`, which treats both nil and length-zero slices as
+// "empty" and elides the field. A payload that arrives as
+// `{"type":"common","locations":[]}` therefore round-trips as
+// `{"type":"common"}` — the explicit empty array becomes an absent
+// member. Sub-decision §3 in the design notes preserves the
+// nil-vs-empty distinction on unmarshal, but byte-stable round-trip
+// of an explicit empty array would require a hand-written marshal
+// path that distinguishes the two on output too. RFC 9396's
+// published examples never use an explicit empty array (members are
+// either omitted or non-empty), so the spec-fixture round-trip is
+// unaffected; consumers needing exact-empty-array preservation can
+// raise the issue and the strategy will be revisited.
+func (c *CommonType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type       string   `json:"type"`
+		Locations  []string `json:"locations,omitempty"`
+		Actions    []string `json:"actions,omitempty"`
+		Datatypes  []string `json:"datatypes,omitempty"`
+		Identifier string   `json:"identifier,omitempty"`
+		Privileges []string `json:"privileges,omitempty"`
+	}{
+		Type:       c.TypeName,
+		Locations:  c.Locations,
+		Actions:    c.Actions,
+		Datatypes:  c.Datatypes,
+		Identifier: c.Identifier,
+		Privileges: c.Privileges,
+	})
+}
+
+// MarshalJSON emits the captured JSON object verbatim. For an
+// UnknownType produced by [Parse], Raw holds the entire original
+// object bytes (see [UnknownType.UnmarshalJSON]), so the output is
+// byte-identical to the input — the round-trip guarantee the
+// forward-compat carrier exists to provide. The bytes are returned
+// as-is; stdlib [encoding/json] accepts a [json.RawMessage]-shaped
+// return without re-parsing.
+//
+// When Raw is empty — the case where a consumer hand-constructs an
+// UnknownType (TypeName set, Raw never populated) to forward an
+// element through a producer surface — MarshalJSON synthesizes a
+// minimal `{"type":"<TypeName>"}` object from TypeName. This is the
+// most useful of the three options (synthesize, emit `{}`, return an
+// error): the synthesized output is well-formed JSON satisfying the
+// spec's MUST on the `type` member, and a hand-built UnknownType
+// remains marshalable. An empty TypeName in this branch produces
+// `{"type":""}`, which is intentionally still well-formed JSON
+// (validation of the `type` value is the consumer's job, not
+// MarshalJSON's).
+//
+// Note that the synthesized branch necessarily does NOT round-trip:
+// re-parsing `{"type":"x"}` produces an UnknownType whose Raw is the
+// 12-byte object, not the empty slice the synthesizer started from.
+// Consumers that care about round-trip identity should populate Raw
+// directly (typically by constructing the carrier via [Parse]).
+func (u *UnknownType) MarshalJSON() ([]byte, error) {
+	if len(u.Raw) == 0 {
+		// Synthesize the minimal `{"type":"<TypeName>"}` object using
+		// the stdlib encoder. Building the JSON by hand would require
+		// escaping the type string (quotes, control chars, etc.); the
+		// encoder already does that correctly.
+		return json.Marshal(struct {
+			Type string `json:"type"`
+		}{Type: u.TypeName})
+	}
+	return u.Raw, nil
+}
+
 // UnmarshalJSON captures the entire JSON object verbatim into Raw and
 // surfaces the `type` discriminator on TypeName. The verbatim capture
 // is what makes [UnknownType] safe to round-trip — the inverse
