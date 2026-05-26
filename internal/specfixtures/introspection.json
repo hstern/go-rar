@@ -1,0 +1,1 @@
+{"active":true,"sub":"24400320","aud":"s6BhdRkqt3","iss":"https://server.example.com/","exp":1419356238,"authorization_details":[{"type":"account_information","actions":["read"],"locations":["https://example.com/accounts"]}]}
