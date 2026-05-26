@@ -155,13 +155,24 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 // elides absent fields, matching the spec's "all baseline members are
 // OPTIONAL" posture.
 //
-// MarshalJSON does NOT validate. The library's lenient-marshal
-// (Postel's-law) posture means a CommonType with an empty TypeName
-// still marshals — the output is technically out-of-spec (RFC 9396 §2
-// requires `type` to be non-empty), but enforcement is opt-in via
-// [CommonType.Validate] or, once it lands, the StrictMarshal toggle.
-// Marshal's job is to faithfully serialize whatever fields the
-// receiver carries.
+// Strict-marshal opt-in. When the package-wide toggle is enabled via
+// [SetStrictMarshal] (off by default), MarshalJSON runs
+// [CommonType.Validate] before serializing and returns the
+// [*ValidationError] verbatim in place of writing potentially-
+// malformed JSON. The error propagates through every stdlib path that
+// invokes MarshalJSON — [encoding/json.Marshal] surfaces the inner
+// error to the caller, and [EncodeForm] (which delegates to
+// `json.Marshal` on the slice) likewise propagates it. With the
+// toggle off, MarshalJSON is purely lenient: a CommonType with an
+// empty TypeName still marshals, producing output that is technically
+// out-of-spec (RFC 9396 §2 requires `type` to be non-empty) but
+// faithful to whatever fields the receiver carries. The lenient
+// default matches the library's Postel's-law posture on outbound —
+// producers usually know what they are producing — and avoids the
+// per-marshal Validate cost for the common case where the consumer
+// has its own validation pipeline upstream. See [SetStrictMarshal]
+// for the toggle's concurrency contract and the test-isolation
+// pattern.
 //
 // Empty-array limitation. [Common.Locations], [Common.Actions],
 // [Common.Datatypes], and [Common.Privileges] are tagged
@@ -178,6 +189,11 @@ func (c *CommonType) UnmarshalJSON(b []byte) error {
 // unaffected; consumers needing exact-empty-array preservation can
 // raise the issue and the strategy will be revisited.
 func (c *CommonType) MarshalJSON() ([]byte, error) {
+	if strictMarshal() {
+		if err := c.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(struct {
 		Type       string   `json:"type"`
 		Locations  []string `json:"locations,omitempty"`

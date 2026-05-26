@@ -7,7 +7,75 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sync/atomic"
 )
+
+// strictMarshalEnabled stores the package-wide strict-marshal toggle.
+// An [atomic.Bool] is used so reads and writes do not race even if a
+// consumer ignores the documented init-time-only contract on
+// [SetStrictMarshal] and flips the flag while a marshal is in flight
+// from another goroutine — torn reads on a plain bool are technically
+// undefined, but the atomic gives well-defined either-old-or-new
+// semantics for free. See [SetStrictMarshal] for the contract; see
+// [strictMarshal] for the read side used by [CommonType.MarshalJSON].
+var strictMarshalEnabled atomic.Bool
+
+// SetStrictMarshal toggles marshal-time validation for the package's
+// [json.Marshaler] implementations. When strict is true,
+// [CommonType.MarshalJSON] runs [CommonType.Validate] first and
+// returns the [*ValidationError] in place of writing potentially-
+// malformed JSON. When strict is false (the default), MarshalJSON is
+// lenient: it serializes whatever fields the receiver carries, even
+// if a [CommonType.Validate] call would reject them. The default
+// matches the library's Postel's-law posture on outbound — producers
+// usually know what they are producing, and the cost of a Validate
+// call on every marshal is not warranted for the common case.
+//
+// SetStrictMarshal returns the previous value of the toggle so
+// callers (especially tests) can save and restore in one round-trip
+// without an extra getter. The intended use is once, during
+// application init:
+//
+//	func init() {
+//	    rar.SetStrictMarshal(true) // fail-fast on outbound
+//	}
+//
+// The toggle is package-global state and is NOT safe to flip
+// concurrently with marshal operations from the caller's
+// perspective: a goroutine that races SetStrictMarshal(true) against
+// another goroutine's MarshalJSON sees either-strict-or-lenient
+// non-deterministically. The [atomic.Bool] backing prevents data
+// races at the language level (the race detector stays quiet, no
+// torn reads), but the application-level semantics — "did this
+// marshal call run Validate?" — are undefined under that race.
+// Tests that need to flip the toggle MUST restore the prior value
+// via [testing.T.Cleanup]; see the `withStrictMarshal` test helper
+// for the canonical pattern.
+//
+// Scope. The toggle governs [CommonType.MarshalJSON] only.
+// [UnknownType.MarshalJSON] is intentionally exempt: the forward-
+// compatibility carrier holds opaque bytes for a type the library
+// has no rules for, [UnknownType.Validate] always returns nil
+// (see [UnknownType.Validate]), and threading a no-op strict check
+// through the verbatim-pass-through path would only confuse the
+// model. Consumer-registered types that want fail-fast marshal can
+// adopt the same `if strictMarshal() { Validate() }` preamble in
+// their own [json.Marshaler] implementations — the [strictMarshal]
+// read helper is unexported but the [SetStrictMarshal] toggle is
+// the single source of truth.
+func SetStrictMarshal(strict bool) (previous bool) {
+	return strictMarshalEnabled.Swap(strict)
+}
+
+// strictMarshal reports the current value of the package-wide
+// strict-marshal toggle. It is the read side of the contract
+// documented on [SetStrictMarshal] and is used by
+// [CommonType.MarshalJSON] to decide whether to run [Validate]
+// before serializing. Unexported because the public surface is the
+// setter; the getter exists only for internal call sites.
+func strictMarshal() bool {
+	return strictMarshalEnabled.Load()
+}
 
 // ValidateAll runs [AuthorizationDetail.Validate] on each element of
 // details and joins the per-element errors via [errors.Join]. If every
