@@ -10,6 +10,8 @@ without bumping the spec-version constant.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-26
+
 ### Added
 
 - **`Extension` embeddable base struct + `Baseline` public alias.**
@@ -113,5 +115,6 @@ dependencies; Go 1.26+.
   `v0.1.0`. Consumers needing typed access to extension fields parse
   `*UnknownType.Raw` themselves.
 
-[Unreleased]: https://github.com/hstern/go-rar/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hstern/go-rar/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hstern/go-rar/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/hstern/go-rar/releases/tag/v0.1.0
