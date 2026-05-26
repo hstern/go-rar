@@ -181,6 +181,11 @@ server, resource server, or client library is the OAuth library's job.
 The library plugs in alongside any stdlib `net/http` server or any
 existing OAuth 2.0 client/server stack.
 
+For a worked integration against a published OAuth 2.0 framework
+showing the three-flow round-trip end-to-end through a real
+authorization-code grant, see
+[`example/fosite-handler/`](example/fosite-handler/).
+
 ## Extensibility
 
 `RegisterType(name, ctor)` lets downstream code register custom
