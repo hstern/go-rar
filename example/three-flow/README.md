@@ -112,3 +112,4 @@ demonstration is omitted:
 The point of this example is the `rar` library's round-trip
 guarantees; the point of a realistic AS-framework example is
 ergonomic fit. Two examples, two scopes.
+
