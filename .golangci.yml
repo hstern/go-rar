@@ -1,0 +1,97 @@
+# golangci-lint v2 configuration.
+#
+# Posture: strict by default, additive rather than subtractive. A new
+# linter or rule lands here once justified; nolint pragmas need an
+# inline comment naming the rule and the reason.
+
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gocritic
+    - misspell
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    govet:
+      enable-all: true
+    staticcheck:
+      # All SA* (correctness), ST* (style), and QF* (quickfix) checks.
+      # ST1000 (package comment required on every file) is too noisy
+      # for a library that comments at the symbol level; one package
+      # comment in rar.go is enough.
+      checks:
+        - all
+        - -ST1000
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unreachable-code
+        - name: unused-parameter
+        - name: var-declaration
+        - name: var-naming
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        # Style preference, not a bug — we use named returns deliberately.
+        - unnamedResult
+    misspell:
+      locale: US
+  exclusions:
+    rules:
+      # Test files lean on assert-style patterns where the per-call
+      # errcheck adds noise without catching anything real.
+      - path: _test\.go
+        linters:
+          - errcheck
+      # govet's fieldalignment pass wants test-table structs reordered
+      # for tighter packing. These structs live for microseconds inside
+      # a single test function — the memory layout doesn't matter, and
+      # the conventional "name first" ordering is the readable form.
+      - path: _test\.go
+        text: 'fieldalignment'
+        linters:
+          - govet
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/hstern/go-rar
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
