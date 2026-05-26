@@ -6,11 +6,13 @@
 // authorization_details parameter.
 //
 // The package is in pre-release scaffolding state; the public surface
-// will be filled in as subsequent phases land (§2 baseline fields,
-// JSON and form codec, validation, conformance fixtures). The stable
-// surface at this point is [SpecVersion] and the [AuthorizationDetail]
-// sealed interface together with the [ValidationError] error type and
-// the [ErrTypeReserved] sentinel.
+// will be filled in as subsequent phases land (JSON and form codec,
+// validation, conformance fixtures). The stable surface at this point
+// is [SpecVersion], the [AuthorizationDetail] sealed interface and its
+// [AuthorizationDetails] slice alias, the [Common] §2 baseline struct
+// together with the [CommonType] and [UnknownType] built-in carriers,
+// and the [ValidationError] error type with the [ErrTypeReserved]
+// sentinel.
 package rar
 
 // SpecVersion identifies the RFC this package implements. RFCs have no
@@ -73,3 +75,36 @@ type AuthorizationDetail interface {
 	// returns values whose Go type is defined inside this package.
 	sealed()
 }
+
+// AuthorizationDetails is the wire-shape alias for the JSON array of
+// authorization_details elements defined by RFC 9396 §2 — the same
+// `authorization_details` parameter that appears in the authorization
+// request, the token request, and the access-token introspection
+// response, expressed in Go as a slice of the singular element type.
+//
+// It exists purely as a readability convenience for function
+// signatures. A future codec entry point will read as
+//
+//	func ParseArray(raw json.RawMessage) (AuthorizationDetails, error)
+//
+// which is easier to scan than the bare slice type while carrying
+// the exact same meaning.
+//
+// AuthorizationDetails is a type alias (note the `=` in the
+// declaration), not a defined type. Consequences:
+//
+//   - AuthorizationDetails and []AuthorizationDetail are the same
+//     Go type and are interchangeable without conversion at any
+//     call site, in any direction.
+//   - Methods cannot be attached to AuthorizationDetails. Helpers
+//     that act on a slice of elements are written as ordinary
+//     functions taking AuthorizationDetails (equivalently,
+//     []AuthorizationDetail) — see the validation and codec
+//     surfaces in subsequent files.
+//
+// The alias-not-defined-type choice is deliberate: consumers that
+// already hold a []AuthorizationDetail (for example, a slice they
+// built by hand for a test, or one returned from a third-party
+// helper) can pass it straight to functions that declare
+// AuthorizationDetails, and vice versa, with no wrapping noise.
+type AuthorizationDetails = []AuthorizationDetail
