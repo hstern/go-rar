@@ -140,6 +140,254 @@ func TestValidateAll_MultipleViolations(t *testing.T) {
 	}
 }
 
+// TestCommonType_Validate_Table exercises every rule CommonType.Validate
+// can emit, both happy and negative, in one place. Each case asserts
+// either nil or a specific Rule on the recovered [*ValidationError]; for
+// the locations-uri cases that name a specific offending index in the
+// Reason, the case also asserts on a Reason substring so the index is
+// pinned (otherwise a future refactor could silently swap the offending
+// entry without breaking the test).
+func TestCommonType_Validate_Table(t *testing.T) {
+	cases := []struct {
+		name          string
+		in            *CommonType
+		wantRule      string // "" means want nil error
+		wantReasonSub string // optional substring assertion on Reason
+	}{
+		{
+			name: "locations-uri happy https+urn",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"https://example.com/x", "urn:foo:bar"}},
+			},
+		},
+		{
+			name: "locations-uri happy http",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"http://example.com"}},
+			},
+		},
+		{
+			name: "locations-uri missing scheme",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"example.com/x"}},
+			},
+			wantRule:      "locations-uri",
+			wantReasonSub: `locations[0] "example.com/x"`,
+		},
+		{
+			name: "locations-uri empty entry",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{""}},
+			},
+			wantRule:      "locations-uri",
+			wantReasonSub: "locations[0]",
+		},
+		{
+			name: "locations-uri relative path",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"/just/a/path"}},
+			},
+			wantRule:      "locations-uri",
+			wantReasonSub: "locations[0]",
+		},
+		{
+			name: "locations-uri valid then invalid; index 1 reported",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"https://ok", "broken"}},
+			},
+			wantRule:      "locations-uri",
+			wantReasonSub: `locations[1] "broken"`,
+		},
+		{
+			name: "locations-uri unparseable hits parse-error path",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Locations: []string{"://no-scheme"}},
+			},
+			wantRule:      "locations-uri",
+			wantReasonSub: "missing protocol scheme",
+		},
+		{
+			name: "actions-element-empty at index 1",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Actions: []string{"read", "", "write"}},
+			},
+			wantRule:      "actions-element-empty",
+			wantReasonSub: "actions[1]",
+		},
+		{
+			name: "datatypes-element-empty at index 1",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Datatypes: []string{"contacts", ""}},
+			},
+			wantRule:      "datatypes-element-empty",
+			wantReasonSub: "datatypes[1]",
+		},
+		{
+			name: "privileges-element-empty at index 0",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Privileges: []string{""}},
+			},
+			wantRule:      "privileges-element-empty",
+			wantReasonSub: "privileges[0]",
+		},
+		{
+			name: "actions happy",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Actions: []string{"read", "write"}},
+			},
+		},
+		{
+			name: "identifier empty is allowed (free-form, no rule)",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Identifier: ""},
+			},
+		},
+		{
+			name: "identifier free-form value is allowed",
+			in: &CommonType{
+				TypeName:       "common",
+				commonBaseline: Common{Identifier: "anything"},
+			},
+		},
+		{
+			name: "first-failure wins: empty TypeName beats bad locations and empty actions",
+			in: &CommonType{
+				// TypeName intentionally empty so the type-required
+				// rule fires before locations/actions get inspected.
+				commonBaseline: Common{
+					Locations: []string{"not-a-uri"},
+					Actions:   []string{""},
+				},
+			},
+			wantRule: "type-required",
+		},
+		{
+			name: "nil/empty arrays validate clean",
+			in: &CommonType{
+				TypeName: "common",
+				// Locations, Actions, Datatypes, Privileges all nil —
+				// no rule fires for absent fields.
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.in.Validate()
+
+			if tc.wantRule == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v; want nil", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("Validate() error = nil; want *ValidationError with Rule %q", tc.wantRule)
+			}
+			var verr *ValidationError
+			if !errors.As(err, &verr) {
+				t.Fatalf("errors.As(err, &*ValidationError) = false; got %T", err)
+			}
+			if verr.Rule != tc.wantRule {
+				t.Errorf("Rule = %q; want %q", verr.Rule, tc.wantRule)
+			}
+			if tc.wantReasonSub != "" && !strings.Contains(verr.Reason, tc.wantReasonSub) {
+				t.Errorf("Reason = %q; want substring %q", verr.Reason, tc.wantReasonSub)
+			}
+			// Categorical umbrella match holds for every validation error.
+			if !errors.Is(err, Err) {
+				t.Error("errors.Is(err, Err) = false; want true")
+			}
+		})
+	}
+}
+
+// TestValidateLocations_Direct exercises the helper without going
+// through CommonType.Validate, so a future refactor of the wiring
+// does not silently lose helper-level coverage. The helper's contract
+// (rule name, type-name pass-through, index in Reason) is part of the
+// shared validation infrastructure that future per-type Validate
+// implementations will rely on.
+func TestValidateLocations_Direct(t *testing.T) {
+	t.Run("nil slice is nil error", func(t *testing.T) {
+		if err := validateLocations("payment_initiation", nil); err != nil {
+			t.Fatalf("validateLocations(nil) = %v; want nil", err)
+		}
+	})
+
+	t.Run("typeName flows through to ValidationError.Type", func(t *testing.T) {
+		err := validateLocations("payment_initiation", []string{"not-a-uri"})
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("errors.As = false; got %T", err)
+		}
+		if verr.Rule != "locations-uri" {
+			t.Errorf("Rule = %q; want %q", verr.Rule, "locations-uri")
+		}
+		if verr.Type != "payment_initiation" {
+			t.Errorf("Type = %q; want %q", verr.Type, "payment_initiation")
+		}
+	})
+
+	t.Run("reports first failing index", func(t *testing.T) {
+		err := validateLocations("x", []string{"https://ok1", "https://ok2", "bad"})
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("errors.As = false; got %T", err)
+		}
+		if !strings.Contains(verr.Reason, "locations[2]") {
+			t.Errorf("Reason = %q; want substring %q", verr.Reason, "locations[2]")
+		}
+	})
+}
+
+// TestValidateNonEmptyStrings_Direct exercises the helper without
+// going through CommonType.Validate; see TestValidateLocations_Direct
+// for the rationale.
+func TestValidateNonEmptyStrings_Direct(t *testing.T) {
+	t.Run("nil slice is nil error", func(t *testing.T) {
+		if err := validateNonEmptyStrings("common", "actions", nil); err != nil {
+			t.Fatalf("validateNonEmptyStrings(nil) = %v; want nil", err)
+		}
+	})
+
+	t.Run("field name flows into Rule and Reason", func(t *testing.T) {
+		err := validateNonEmptyStrings("common", "datatypes", []string{"ok", ""})
+		var verr *ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("errors.As = false; got %T", err)
+		}
+		if verr.Rule != "datatypes-element-empty" {
+			t.Errorf("Rule = %q; want %q", verr.Rule, "datatypes-element-empty")
+		}
+		if !strings.Contains(verr.Reason, "datatypes[1]") {
+			t.Errorf("Reason = %q; want substring %q", verr.Reason, "datatypes[1]")
+		}
+		if verr.Type != "common" {
+			t.Errorf("Type = %q; want %q", verr.Type, "common")
+		}
+	})
+
+	t.Run("all non-empty is nil error", func(t *testing.T) {
+		if err := validateNonEmptyStrings("common", "privileges", []string{"a", "b", "c"}); err != nil {
+			t.Fatalf("validateNonEmptyStrings(all non-empty) = %v; want nil", err)
+		}
+	})
+}
+
 func TestValidateAll_PreservesValidationErrorAccess(t *testing.T) {
 	details := AuthorizationDetails{
 		&CommonType{TypeName: "common"},

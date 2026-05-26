@@ -89,20 +89,42 @@ func (c *CommonType) Common() *Common { return &c.commonBaseline }
 // categorically to every authorization_details element, regardless of
 // type-specific shape. Implements [AuthorizationDetail].
 //
-// Rules currently enforced:
+// Rules enforced, in evaluation order:
 //
 //   - "type-required" — TypeName must be a non-empty string. RFC 9396
 //     §2 makes the `type` member required and non-empty; an element
 //     missing the discriminator cannot be dispatched and is rejected
 //     here as a structural error rather than a per-type concern.
 //
+//   - "locations-uri" — every entry of [Common.Locations] must be a
+//     syntactically valid absolute URI (a parseable reference carrying
+//     a non-empty scheme). RFC 9396 §2 defines locations as URIs
+//     identifying the resource the authorization applies to; relative
+//     references and empty strings cannot stand alone. Delegated to
+//     [validateLocations]; see that helper for the exact two-step
+//     check and why empty entries are caught here rather than via the
+//     non-empty-string helper.
+//
+//   - "actions-element-empty", "datatypes-element-empty",
+//     "privileges-element-empty" — none of the three §2 array-of-
+//     strings members may contain an empty-string element. RFC 9396 §2
+//     does not literally forbid it, but an empty value in a
+//     permission-like field is meaningless and almost always a
+//     producer bug; the library surfaces it through opt-in Validate
+//     rather than at marshal time. Delegated to
+//     [validateNonEmptyStrings]; see that helper for the rationale.
+//
+// [Common.Identifier] is intentionally not validated. RFC 9396 §2
+// defines it as a free-form identifier the authorization server
+// recognizes; the library has no view on what shapes are meaningful
+// and leaves any structural check to the consumer.
+//
 // Validate returns the first violation as a [*ValidationError]; on a
-// well-formed value it returns nil. The URI syntax check on Locations
-// entries (and the non-empty-string check on Actions / Datatypes /
-// Privileges) is added by the next commit via shared helpers — by
-// design this method enforces only the categorical §2 MUST that has
-// no per-type variability, and defers the composable per-field checks
-// to the helper layer so other type carriers can reuse them.
+// well-formed value it returns nil. Per-element validation is opt-in
+// via [ValidateAll], which aggregates across elements; within a single
+// element, the first failing rule wins so that callers get a
+// deterministic, structurally-meaningful answer (a missing
+// discriminator is reported before a bad locations entry, etc.).
 func (c *CommonType) Validate() error {
 	if c.TypeName == "" {
 		return &ValidationError{
@@ -110,6 +132,18 @@ func (c *CommonType) Validate() error {
 			Type:   "",
 			Reason: "type member must be a non-empty string",
 		}
+	}
+	if err := validateLocations(c.TypeName, c.Locations); err != nil {
+		return err
+	}
+	if err := validateNonEmptyStrings(c.TypeName, "actions", c.Actions); err != nil {
+		return err
+	}
+	if err := validateNonEmptyStrings(c.TypeName, "datatypes", c.Datatypes); err != nil {
+		return err
+	}
+	if err := validateNonEmptyStrings(c.TypeName, "privileges", c.Privileges); err != nil {
+		return err
 	}
 	return nil
 }
