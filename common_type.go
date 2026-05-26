@@ -27,14 +27,13 @@ type commonBaseline = Common
 // whose only members are the RFC 9396 §2 baseline — the elements that
 // do not extend the discriminated union with type-specific fields.
 //
-// The dispatch table (landing in a later commit) registers CommonType
-// under the literal `type` discriminator string "common"; any payload
-// the codec parses whose `type` is "common" lands here. Payloads with
-// any other `type` value either dispatch to a consumer-registered
-// constructor or fall through to [UnknownType]. RegisterType, the
-// dispatch table itself, and the constructor wiring are codec
-// concerns; this file declares only the type and its
-// AuthorizationDetail-satisfying methods.
+// The dispatch table registers CommonType under the literal `type`
+// discriminator string "common"; any payload the codec parses whose
+// `type` is "common" lands here. Payloads with any other `type` value
+// either dispatch to a consumer-registered constructor or fall through
+// to [UnknownType]. [RegisterType], the dispatch table itself, and the
+// constructor wiring are codec concerns; this file declares only the
+// type and its [AuthorizationDetail]-satisfying methods.
 //
 // CommonType embeds the §2 baseline (via the [commonBaseline] alias —
 // see that type's documentation for why the alias is necessary)
@@ -54,17 +53,17 @@ type commonBaseline = Common
 //     constructed *CommonType. Producers building a CommonType by hand
 //     are responsible for setting TypeName to a non-empty string
 //     (RFC 9396 §2 makes the `type` member required and non-empty);
-//     [CommonType.Validate] enforces that rule once the validation
-//     phase lands.
+//     [CommonType.Validate] enforces that rule via the
+//     "type-required" check.
 //
 //   - The embedded baseline supplies the §2 fields. See [Common] for
 //     per-field semantics and the marshal-order guarantees.
 type CommonType struct {
 	// TypeName is the `type` discriminator value for this element.
 	// RFC 9396 §2 requires the member to be a non-empty string; the
-	// codec populates it from the unmarshaled object, and the
-	// validation phase (a later commit) rejects an empty value via
-	// the type-required rule.
+	// codec populates it from the unmarshaled object, and
+	// [CommonType.Validate] rejects an empty value via the
+	// "type-required" rule.
 	TypeName string
 
 	// commonBaseline is the embedded §2 baseline (aliased to Common —

@@ -5,14 +5,56 @@
 // the typed encoder/decoder/validator for the OAuth 2.0
 // authorization_details parameter.
 //
-// The package is in pre-release scaffolding state; the public surface
-// will be filled in as subsequent phases land (JSON and form codec,
-// validation, conformance fixtures). The stable surface at this point
-// is [SpecVersion], the [AuthorizationDetail] sealed interface and its
-// [AuthorizationDetails] slice alias, the [Common] §2 baseline struct
-// together with the [CommonType] and [UnknownType] built-in carriers,
-// and the [ValidationError] error type with the [ErrTypeReserved]
-// sentinel.
+// # Quickstart
+//
+// Parse a wire payload, then opt in to validation:
+//
+//	const payload = `[{"type":"common","actions":["read","write"],"locations":["https://api.example.com/v1/data"]}]`
+//
+//	details, err := rar.ParseArray([]byte(payload))
+//	if err != nil { /* malformed JSON or missing type discriminator */ }
+//	if err := rar.ValidateAll(details); err != nil { /* well-formedness violation */ }
+//
+// See [Parse], [ParseArray], [EncodeForm], and [DecodeForm] for the
+// codec surface; see [ValidateAll] and [SetStrictMarshal] for the
+// validation surface.
+//
+// # Surface map
+//
+// The public API is intentionally small:
+//
+//   - [SpecVersion] — the RFC this build implements.
+//   - [AuthorizationDetail] — the sealed interface satisfied by every
+//     element in the discriminated union, with the [AuthorizationDetails]
+//     slice alias for the array form.
+//   - [Common] — the RFC 9396 §2 baseline members shared by every
+//     element ([Common.Locations], [Common.Actions], [Common.Datatypes],
+//     [Common.Identifier], [Common.Privileges]).
+//   - [CommonType] — the §2-only built-in, registered under the
+//     "common" discriminator.
+//   - [UnknownType] — the forward-compatibility carrier for any
+//     discriminator the registry does not recognize (round-trips
+//     verbatim).
+//   - [RegisterType] — installs a constructor for an additional
+//     discriminator.
+//   - [Parse] / [ParseArray] — decode the wire shape into typed values.
+//   - [EncodeForm] / [DecodeForm] — convert to and from the
+//     authorization-endpoint form parameter value.
+//   - [ValidateAll] / [SetStrictMarshal] — opt-in validation.
+//   - [Err], [ErrTypeReserved], [ValidationError] — the error surface;
+//     every error this package returns matches errors.Is(err, [Err]).
+//
+// # Design posture
+//
+// Lenient unmarshal, strict-on-opt-in marshal: the codec accepts
+// whatever well-formed JSON the wire delivers and defers
+// well-formedness checks to [AuthorizationDetail.Validate] (per
+// element) or [ValidateAll] (across an array). The [SetStrictMarshal]
+// toggle additionally runs [CommonType.Validate] inside
+// [CommonType.MarshalJSON]. Unknown discriminators are NOT an error —
+// they land in [UnknownType] and round-trip byte-stably, which is how
+// the sealed-interface model stays forward-compatible with the
+// IANA-registered type space the RFC defines as open.
 package rar
 
 // SpecVersion identifies the RFC this package implements. RFCs have no
@@ -27,11 +69,11 @@ const SpecVersion = "RFC 9396"
 //
 // The interface is sealed: implementations must live inside this
 // package. The sanctioned way for downstream code to add a new
-// concrete type is RegisterType (landing in a later commit), which
-// installs an unmarshal constructor in the dispatch table. Sealing
-// keeps the wire-shape contract under the package's control —
-// every value an unmarshal can produce is one this package knows how
-// to marshal and validate consistently.
+// concrete type is [RegisterType], which installs an unmarshal
+// constructor in the dispatch table. Sealing keeps the wire-shape
+// contract under the package's control — every value an unmarshal
+// can produce is one this package knows how to marshal and validate
+// consistently.
 //
 // Built-in implementations planned for this surface:
 //
