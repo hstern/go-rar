@@ -63,7 +63,7 @@ func EncodeForm(details AuthorizationDetails) (string, error) {
 	}
 	b, err := json.Marshal(details)
 	if err != nil {
-		return "", fmt.Errorf("%w: encode authorization_details form value: %v", Err, err)
+		return "", fmt.Errorf("%w: encode authorization_details form value: %w", Err, err)
 	}
 	return string(b), nil
 }

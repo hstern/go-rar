@@ -166,7 +166,11 @@ func TestCommonTypeMarshalJSON_DispatchesFromInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal(ad) = %v; want nil", err)
 	}
-	direct, err := json.Marshal(ad.(*CommonType))
+	ct, ok := ad.(*CommonType)
+	if !ok {
+		t.Fatalf("ad type = %T; want *CommonType", ad)
+	}
+	direct, err := json.Marshal(ct)
 	if err != nil {
 		t.Fatalf("json.Marshal(*CommonType) = %v; want nil", err)
 	}

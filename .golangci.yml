@@ -3,6 +3,12 @@
 # Posture: strict by default, additive rather than subtractive. A new
 # linter or rule lands here once justified; nolint pragmas need an
 # inline comment naming the rule and the reason.
+#
+# Pre-v0.1.0 audit: the rule list was diffed against `--default=all`
+# and against the sibling library's config. Linters added in that
+# pass produced actionable signal on the codebase or guard categories
+# worth preventing regressions in. Linters explicitly rejected — and
+# why — appear inline at the end of the `enable:` list.
 
 version: "2"
 
@@ -12,14 +18,66 @@ run:
 linters:
   default: none
   enable:
+    # Correctness — the no-room-for-debate baseline.
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
+    - errorlint        # surfaces %v-instead-of-%w on fmt.Errorf wraps.
+    - forcetypeassert  # comma-ok mandatory; bare assertions panic on type mismatch.
+    - copyloopvar      # Go 1.22+ loop-variable copy nits.
+    - durationcheck    # time.Duration * time.Duration arithmetic bugs.
+    - nilerr           # `return nil` when err is non-nil.
+    - reassign         # package-level var reassignment.
+    - bodyclose        # http.Response.Body leaks (defensive — codec ships no HTTP yet).
+    - noctx            # net/http calls missing ctx (defensive).
+    - bidichk          # CVE-2021-42574 trojan-source bidi sequences.
+    # Style / readability.
     - revive
     - gocritic
     - misspell
+    - godot            # godoc sentences end in a period.
+    - dupword          # "the the" et al in comments.
+    - predeclared      # shadowing len/cap/error/etc.
+    - errname          # ErrFoo / FooError naming for errors.
+    - asciicheck       # non-ASCII identifiers (homoglyph attack surface).
+    - whitespace       # trailing whitespace + redundant blank lines.
+    # Modernization.
+    - modernize        # omitempty-on-struct → omitzero, x/slices into stdlib, etc.
+    - usestdlibvars    # http.StatusOK over 200, etc.
+    - intrange         # `for i := range N` over `for i := 0; i < N; i++`.
+    - exptostd         # x/exp moves into stdlib.
+    # Meta — enforce that nolint pragmas carry the rule and reason.
+    - nolintlint
+    #
+    # Rejected during the audit and the reason:
+    #   - exhaustruct: would fire on every test-table partial-literal of
+    #     CommonType / Common / UnknownType, and on the registry's
+    #     intentionally zero-value mutex. The carriers are designed to
+    #     work with partial literals (zero-value-friendly).
+    #   - depguard: would flag every test-file import of the package
+    #     itself without per-import config.
+    #   - embeddedstructfieldcheck: would force embedded alias structs
+    #     above the direct-named members; the current ordering reflects
+    #     the wire shape, which is the load-bearing intent.
+    #   - cyclop / gocyclo / funlen / gocognit: would fire on table-
+    #     driven test orchestrators (TestSpecFixtures_RoundTrip etc.)
+    #     where the dispatch is intentionally linear-readable.
+    #   - goconst: rule-name strings ("type-required", "locations-uri")
+    #     repeat across validation tests by design — hoisting them to
+    #     package constants obscures the test-as-spec-narrative.
+    #   - paralleltest: project decision to keep tests serial for now;
+    #     the suite runs in well under a second with -race -shuffle=on
+    #     and the carriers have no shared mutable state outside the
+    #     registry (which paralleltest can't help with anyway).
+    #   - testifylint, thelper: the suite uses stdlib `testing` without
+    #     testify and the test helpers in use already call t.Helper().
+    #   - gosec: this is a pure-JSON library; no crypto, no I/O, no
+    #     command exec. Re-enable if those surfaces land.
+    #   - perfsprint, unconvert: clean today, not worth the maintenance
+    #     overhead until a microbench shows them earning their keep.
+    #   - containedctx, fatcontext: no contexts in this library.
   settings:
     errcheck:
       check-type-assertions: true
@@ -67,6 +125,14 @@ linters:
         - unnamedResult
     misspell:
       locale: US
+    nolintlint:
+      # Require the rule name (//nolint:errcheck not //nolint) and a
+      # `// reason` comment after it. There are zero nolint pragmas in
+      # the codebase today; the convention is documented here so the
+      # first one to land does so under the right contract.
+      require-specific: true
+      require-explanation: true
+      allow-unused: false
   exclusions:
     rules:
       # Test files lean on assert-style patterns where the per-call

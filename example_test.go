@@ -93,7 +93,10 @@ func ExampleUnknownType_roundTrip() {
 	if err != nil {
 		panic(err)
 	}
-	u := d.(*rar.UnknownType)
+	u, ok := d.(*rar.UnknownType)
+	if !ok {
+		panic(fmt.Sprintf("d type = %T; want *rar.UnknownType", d))
+	}
 	fmt.Println(u.TypeName)
 	b, err := json.Marshal(u)
 	if err != nil {
