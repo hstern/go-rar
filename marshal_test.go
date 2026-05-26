@@ -124,27 +124,94 @@ func TestCommonTypeMarshalJSON_OmitEmpty(t *testing.T) {
 	}
 }
 
-func TestCommonTypeMarshalJSON_EmptyArrayElided(t *testing.T) {
-	// Document and pin the empty-array limitation: a CommonType whose
-	// Locations is a length-zero non-nil slice marshals with the
-	// member elided. This is the consequence of `omitempty` on a
-	// []string — stdlib treats len==0 as empty regardless of
-	// nil-vs-non-nil. The behavior is called out in CommonType's
-	// MarshalJSON godoc and in design-decisions.md sub-decision §3;
-	// the test guards against an accidental fix that would change the
-	// wire shape without updating the docs.
+func TestCommonTypeMarshalJSON_EmptyArrayPreserved(t *testing.T) {
+	// A non-nil length-zero slice marshals as the JSON literal `[]`
+	// rather than being elided. This is the headline RAR-31 fix:
+	// stdlib `omitempty` on a `[]string` cannot distinguish nil from
+	// length-zero, so the prior implementation dropped explicit empty
+	// arrays on the wire. The hand-written marshal in
+	// [CommonType.MarshalJSON] now makes the distinction per field —
+	// nil elides, non-nil-empty emits `[]`. The test exercises one
+	// field (Actions) because the emit path is shared across all four
+	// baseline slice fields; the per-field coverage lives in the
+	// EmptyArrayRoundTrip parameterized test below.
 	ct := &CommonType{
 		TypeName: "common",
 		commonBaseline: Common{
-			Locations: []string{},
+			Actions: []string{},
 		},
 	}
 	out, err := json.Marshal(ct)
 	if err != nil {
 		t.Fatalf("json.Marshal(...) = %v; want nil", err)
 	}
-	if string(out) != `{"type":"common"}` {
-		t.Errorf("output mismatch: got %s, want %s (omitempty elides empty slices)", out, `{"type":"common"}`)
+	want := `{"type":"common","actions":[]}`
+	if string(out) != want {
+		t.Errorf("output mismatch: got %s, want %s", out, want)
+	}
+}
+
+func TestCommonTypeMarshalJSON_NilArrayElided(t *testing.T) {
+	// The common case: a nil slice elides the member entirely. This
+	// is the bare-minimum CommonType shape and the round-trip pair
+	// of EmptyArrayPreserved — nil maps to "absent member" on the
+	// wire, while non-nil-empty maps to `[]`. Pinning the elide
+	// behavior here guards against an over-correction that would
+	// emit `null` (or `[]`) for nil slices and break every consumer
+	// relying on the bare-minimum shape.
+	ct := &CommonType{
+		TypeName: "common",
+		commonBaseline: Common{
+			Actions: nil,
+		},
+	}
+	out, err := json.Marshal(ct)
+	if err != nil {
+		t.Fatalf("json.Marshal(...) = %v; want nil", err)
+	}
+	want := `{"type":"common"}`
+	if string(out) != want {
+		t.Errorf("output mismatch: got %s, want %s (nil slices elide)", out, want)
+	}
+}
+
+func TestCommonTypeMarshalJSON_EmptyArrayRoundTrip(t *testing.T) {
+	// Parse a payload carrying an explicit empty array for each §2
+	// baseline slice field, marshal back, assert byte-equality. This
+	// is the RAR-31 acceptance criterion: a payload whose explicit
+	// empty array survives a Parse / Marshal round trip without
+	// being elided.
+	//
+	// Each subcase pins one field independently so a regression that
+	// flips the emit path on a single field (say, accidentally
+	// re-introducing `omitempty` on Privileges) surfaces against that
+	// specific field's subtest, not against a multi-field aggregate
+	// that obscures which field broke.
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{name: "locations empty", in: `{"type":"common","locations":[]}`},
+		{name: "actions empty", in: `{"type":"common","actions":[]}`},
+		{name: "datatypes empty", in: `{"type":"common","datatypes":[]}`},
+		{name: "privileges empty", in: `{"type":"common","privileges":[]}`},
+		{name: "all empty", in: `{"type":"common","locations":[],"actions":[],"datatypes":[],"privileges":[]}`},
+		{name: "mixed empty and populated", in: `{"type":"common","locations":["x"],"actions":[],"privileges":["p"]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Parse(json.RawMessage(tc.in))
+			if err != nil {
+				t.Fatalf("Parse(%q) = %v; want nil", tc.in, err)
+			}
+			out, err := json.Marshal(got)
+			if err != nil {
+				t.Fatalf("json.Marshal(...) = %v; want nil", err)
+			}
+			if !bytes.Equal(out, []byte(tc.in)) {
+				t.Errorf("round-trip mismatch:\n got %s\nwant %s", out, tc.in)
+			}
+		})
 	}
 }
 

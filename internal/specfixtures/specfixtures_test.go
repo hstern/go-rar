@@ -43,6 +43,7 @@ func TestAllReturnsEveryFixture(t *testing.T) {
 		"multiple":       Multiple,
 		"token_response": TokenResponse,
 		"introspection":  Introspection,
+		"empty_array":    EmptyArray,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("All() returned %d entries, want %d", len(got), len(want))

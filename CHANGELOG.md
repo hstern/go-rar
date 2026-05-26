@@ -10,6 +10,23 @@ without bumping the spec-version constant.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Explicit empty arrays now round-trip byte-stably.** A payload
+  carrying `"actions": []` (or any §2 baseline slice field as an
+  explicit empty array — `locations`, `actions`, `datatypes`,
+  `privileges`) re-marshals with the field preserved as `[]` rather
+  than being elided. Previously, the stdlib `omitempty` rule on
+  `[]string` could not distinguish nil from length-zero, so any
+  explicit empty array was dropped on the marshal side. The
+  hand-written `*CommonType.MarshalJSON` introduced by this fix emits
+  each slice field iff non-nil: nil elides (the spec's "absent
+  member" shape), and non-nil-empty emits `[]` (the present-but-empty
+  shape consumers may pin on the wire). The fix is observation-only
+  for the common case — payloads whose slice fields are either nil or
+  non-empty produce byte-identical output to the prior implementation;
+  only the explicit-empty case changes.
+
 ## [0.1.0] - 2026-05-26
 
 Initial public release. Targets RFC 9396 — OAuth 2.0 Rich Authorization
